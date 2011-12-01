@@ -4,9 +4,13 @@ r"""Create FogBugz time reports in CSV format
 Usage: %prog [options] arg1 arg2
 
 example:
-    ./fogpy/timereport.py -u foo@bar.com -p mypassword -o /tmp/out.xls \
+    %prog -u foo@bar.com -p mypassword -o /tmp/out.xls \
             -b https://ecometrica.fogbugz.com \
             2011-10-29T00:00:00Z 2011-11-30T00:00:00Z
+
+You can also create a file called local_settings.py in the same folder
+as %prog, and define base_url, username and password in there instead
+of specifying -u, -p and -b.
 """
 
 import codecs
