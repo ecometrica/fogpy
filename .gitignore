@@ -1,0 +1,7 @@
+*.pyc
+build
+pip-log.txt
+fogpy/local_settings.py
+*.swp
+*.mo
+
