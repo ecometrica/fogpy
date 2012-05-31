@@ -5,7 +5,7 @@ Usage: %prog [options] arg1 arg2
 
 example:
     %prog -u foo@bar.com -p mypassword -o /tmp/out.xls \
-            -b https://ecometrica.fogbugz.com \
+            -b https://ecometrica.fogbugz.com/api.asp \
             2011-10-29T00:00:00Z 2011-11-30T00:00:00Z
 
 You can also create a file called local_settings.py in the same folder
@@ -171,9 +171,11 @@ class TimeReporting(object):
         if self.bugs_with_no_tags:
             lines.append('Bugs with no tags:' + '\t' 
                          + ' '.join(`b` for b in self.bugs_with_no_tags))
-            lines.append('Equivalent fogbugz filter:' + '\tOrderBy:Project ' 
+            fb_filter = ('OrderBy:Project ' 
                          + ' OR '.join('ixbug:%s'%b 
                                        for b in self.bugs_with_no_tags))
+            lines.append('Equivalent fogbugz filter:' + fb_filter)
+            l.info("No tags fb filter: " + fb_filter)
         else:
             lines.append('Bugs with no tags:\tnone' )
         lines.append('')
