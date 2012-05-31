@@ -1,3 +1,6 @@
 python-lxml
 ipython
+libxslt1-dev
+libxml2-dev
+
 
