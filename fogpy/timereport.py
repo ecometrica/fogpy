@@ -75,12 +75,16 @@ class TimeReporting(object):
 
     def get_buginfo(self, bug_id):
         """Fill in info for a bug"""
-        resp = self.fbapi.call('search', q=`bug_id`, cols='tags,sTitle,ixBug')
+        resp = self.fbapi.call('search', q=`bug_id`, 
+                               cols='tags,sTitle,ixBug,sProject')
         c = resp.find('cases').find('case')
         bug_id = int(c.find('ixBug').text)
+        project = c.find('sProject').text
         self.bugs[bug_id] = {
             'title': c.find('sTitle').text,
-            'tags': [t.text for t in c.find('tags').findall('tag')]
+            'tags': ['%s-%s'%(project, t.text) 
+                     for t in c.find('tags').findall('tag')],
+            'project': project
         }
         self.all_tags.update(self.bugs[bug_id]['tags'])
         if not self.bugs[bug_id]['tags']:
@@ -110,15 +114,17 @@ class TimeReporting(object):
         resp = self.fbapi.call(
             'search', q='resolved:"%s..%s"'%(start.strftime('%m/%d/%Y'),
                                              end.strftime('%m/%d/%Y')),
-            cols='ixBug,ixPerson,hrsElapsedExtra,tags,ixPersonResolvedBy',
+            cols=('ixBug,ixPerson,hrsElapsedExtra,tags,sProject,'
+                  'ixPersonResolvedBy'),
         )
         for b in resp.find('cases').iterfind('case'):
             bug_id = int(b.find('ixBug').text)
             dev_name = self.devs[int(b.find('ixPersonResolvedBy').text)]['name']
             hours = float(b.find('hrsElapsedExtra').text)
             tags = self.bugs[bug_id]['tags']
+            project = self.bugs[bug_id]['project']
             for t in tags:
-                self.hours_perdev[dev_name][t] += hours
+                self.hours_perdev[dev_name]['%s-%s'%(project, t)] += hours
             if not tags:
                 self.hours_perdev[dev_name]['None'] += hours
             self.hours_perdev[dev_name]['total'] += hours
