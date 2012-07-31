@@ -89,7 +89,7 @@ class TimeReporting(object):
     def get_buginfo(self, bug_id):
         """Fill in info for a bug"""
         resp = self.fbapi.call('search', q=`bug_id`, 
-                               cols='tags,sTitle,ixBug,sProject')
+                               cols='tags,sTitle,ixBug,sProject,dtResolved')
         c = resp.find('cases').find('case')
         bug_id = int(c.find('ixBug').text)
         project = c.find('sProject').text
@@ -97,7 +97,8 @@ class TimeReporting(object):
             'title': c.find('sTitle').text,
             'tags': ['%s-%s'%(project, t.text) 
                      for t in c.find('tags').findall('tag')],
-            'project': project
+            'project': project,
+            'resolved': c.find('dtResolved').text
         }
         self.all_tags.update(self.bugs[bug_id]['tags'])
         if not self.bugs[bug_id]['tags']:
@@ -154,7 +155,7 @@ class TimeReporting(object):
         if end is None: end = self.end_date
 
         TimeEntry = namedtuple('TimeEntry', 
-                               ('bug_num', 'title', 'dev_name', 'hours', 
+                               ('date', 'bug_num', 'title', 'dev_name', 'hours', 
                                 'project', 'tag', 'url', 'type'))
         entries = []
         # Find all timesheet hours
@@ -170,8 +171,9 @@ class TimeReporting(object):
             tags = b['tags'] or ['None', ]
             for t in tags:
                 entries.append(
-                    TimeEntry(bug_id, b['title'], dev_name, hours, b['project'],
-                              t, self.url_for_bug(bug_id), 'timesheet')
+                    TimeEntry(i.find('dtEnd').text, bug_id, b['title'], 
+                              dev_name, hours, b['project'], t, 
+                              self.url_for_bug(bug_id), 'timesheet')
                 )
 
         # now add non-timesheet elapsed time for bugs resolved in that
@@ -190,7 +192,7 @@ class TimeReporting(object):
             tags = bug['tags'] or ['None', ]
             for t in tags:
                 entries.append(
-                    TimeEntry(bug_id, bug['title'], dev_name, hours, 
+                    TimeEntry(bug['resolved'], bug_id, bug['title'], dev_name, hours, 
                               bug['project'], t, self.url_for_bug(bug_id), 
                               'elapsed')
                 )
@@ -262,11 +264,11 @@ class TimeReporting(object):
             lines.append('Bugs with no tags:' + '\t' 
                          + ' '.join(`b` for b in self.bugs_with_no_tags))
             fb_filter = self.fb_filter_for_bugs(self.bugs_with_no_tags)
-            lines.append('Equivalent fogbugz filter:' + fb_filter)
+            lines.append('Equivalent fogbugz filter:\t' + fb_filter)
             l.info("No tags fb filter: " + fb_filter)
         else:
             lines.append('Bugs with no tags:\tnone' )
-        lines.append('bug_num\ttitle\tdev_name\thours\tproject\ttag\turl\ttype')
+        lines.append('date\tbug_num\ttitle\tdev_name\thours\tproject\ttag\turl\ttype')
         for entry in self.hours_details:
             lines.append('\t'.join('%s'%i for i in entry))
 
