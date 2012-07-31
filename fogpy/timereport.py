@@ -14,7 +14,7 @@ of specifying -u, -p and -b.
 """
 
 import codecs
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from cStringIO import StringIO
 import datetime as dt
 import iso8601
@@ -23,6 +23,7 @@ from lxml import etree
 from optparse import OptionParser
 import sys
 import urllib
+import urllib2
 
 from fogpy.fogbugzapi import FogBugzAPI
 
@@ -58,10 +59,22 @@ class TimeReporting(object):
         self.start_date, self.end_date = start_date, end_date
         self.all_tags = set()
         self.bugs_with_no_tags = set()
+        self.base_url = base_url
 
     def logout(self):
         self.fbapi.logout()
     
+    def url_for_bug(self, bug_id):
+        url_elements = list(urllib2.urlparse.urlsplit(self.base_url))
+        url_elements[2] = '/?%d' % bug_id
+        url_elements[3] = ''
+        url_elements[4] = ''
+        return urllib2.urlparse.urlunsplit(url_elements)
+
+    def fb_filter_for_bugs(self, bug_id_list):
+        return ('OrderBy:Project ' + ' OR '.join('ixbug:%s'%b 
+                                                 for b in bug_id_list))
+
     def get_devinfo(self, dev_id):
         """Actually just gets info for all devs at once"""
         resp = self.fbapi.call('listPeople')
@@ -135,7 +148,60 @@ class TimeReporting(object):
                       u"associated tags: " 
                       + ', '.join(`b` for b in self.bugs_with_no_tags))
         return self.hours_perdev
+    
+    def get_hours_details(self, start=None, end=None):
+        if start is None: start = self.start_date
+        if end is None: end = self.end_date
 
+        TimeEntry = namedtuple('TimeEntry', 
+                               ('bug_num', 'title', 'dev_name', 'hours', 
+                                'project', 'tag', 'url', 'type'))
+        entries = []
+        # Find all timesheet hours
+        intervals = self._get_intervals_in_daterange(start, end)
+        for i in intervals:
+            hours = (
+                iso8601.parse_date(i.find('dtEnd').text)
+                - iso8601.parse_date(i.find('dtStart').text) 
+            ).total_seconds() / 3600.
+            dev_name = self.devs[int(i.find('ixPerson').text)]['name']
+            bug_id = int(i.find('ixBug').text)
+            b = self.bugs[bug_id]
+            tags = b['tags'] or ['None', ]
+            for t in tags:
+                entries.append(
+                    TimeEntry(bug_id, b['title'], dev_name, hours, b['project'],
+                              t, self.url_for_bug(bug_id), 'timesheet')
+                )
+
+        # now add non-timesheet elapsed time for bugs resolved in that
+        # period, using resolvedby as dev
+        resp = self.fbapi.call(
+            'search', q='resolved:"%s..%s"'%(start.strftime('%m/%d/%Y'),
+                                             end.strftime('%m/%d/%Y')),
+            cols=('ixBug,ixPerson,hrsElapsedExtra,tags,sProject,'
+                  'ixPersonResolvedBy'),
+        )
+        for b in resp.find('cases').iterfind('case'):
+            bug_id = int(b.find('ixBug').text)
+            dev_name = self.devs[int(b.find('ixPersonResolvedBy').text)]['name']
+            hours = float(b.find('hrsElapsedExtra').text)
+            bug = self.bugs[bug_id]
+            tags = bug['tags'] or ['None', ]
+            for t in tags:
+                entries.append(
+                    TimeEntry(bug_id, bug['title'], dev_name, hours, 
+                              bug['project'], t, self.url_for_bug(bug_id), 
+                              'elapsed')
+                )
+
+        if self.bugs_with_no_tags:
+            l.warning(u"Some bugs covered by this timesheet have no "
+                      u"associated tags: " 
+                      + ', '.join(`b` for b in self.bugs_with_no_tags))
+        self.hours_details = entries
+        return entries
+    
     def _parse_interval(self, i):
         hours = (
             iso8601.parse_date(i.find('dtEnd').text)
@@ -155,7 +221,7 @@ class TimeReporting(object):
                                dtEnd=end.isoformat()+'Z')
         return resp.find('intervals').iterfind('interval')
     
-    def csv_hours(self):
+    def csv_cumulative_hours(self):
         if not self.hours_perdev:
             self.get_all_hours_per_tag_per_dev()
 
@@ -177,9 +243,7 @@ class TimeReporting(object):
         if self.bugs_with_no_tags:
             lines.append('Bugs with no tags:' + '\t' 
                          + ' '.join(`b` for b in self.bugs_with_no_tags))
-            fb_filter = ('OrderBy:Project ' 
-                         + ' OR '.join('ixbug:%s'%b 
-                                       for b in self.bugs_with_no_tags))
+            fb_filter = self.fb_filter_for_bugs(self.bugs_with_no_tags)
             lines.append('Equivalent fogbugz filter:' + fb_filter)
             l.info("No tags fb filter: " + fb_filter)
         else:
@@ -189,6 +253,23 @@ class TimeReporting(object):
         lines.append("\tDon't count non-timesheet time")
         lines.append("\tSome hours count in multiple tags, so total is less "
                      "than the sum of tags")
+        return '\n'.join(lines)
+    
+    def csv_detailed_hours(self):
+        lines = []
+        lines.append("Hours details for %s-%s\n" % (self.start_date, self.end_date))
+        if self.bugs_with_no_tags:
+            lines.append('Bugs with no tags:' + '\t' 
+                         + ' '.join(`b` for b in self.bugs_with_no_tags))
+            fb_filter = self.fb_filter_for_bugs(self.bugs_with_no_tags)
+            lines.append('Equivalent fogbugz filter:' + fb_filter)
+            l.info("No tags fb filter: " + fb_filter)
+        else:
+            lines.append('Bugs with no tags:\tnone' )
+        lines.append('bug_num\ttitle\tdev_name\thours\tproject\ttag\turl\ttype')
+        for entry in self.hours_details:
+            lines.append('\t'.join('%s'%i for i in entry))
+
         return '\n'.join(lines)
 
 
@@ -206,6 +287,9 @@ if __name__=='__main__':
     parser.add_option("-b", "--baseurl", dest="base_url",
                       help="Base URL for FogBugz API [%default]",
                       default=settings.get('base_url', ''))
+    parser.add_option("-l", "--long", dest="long", default=False,
+                      action='store_true', 
+                      help="Dumps highly detailed logs of timesheet data.")
 
     (options, args) = parser.parse_args()
 
@@ -231,8 +315,12 @@ if __name__=='__main__':
     tr = TimeReporting(options.username, options.password,
                        options.base_url, start_date, end_date)
     try:
-        hours = tr.get_all_hours_per_tag_per_dev()
-        csv_hours = tr.csv_hours()
+        if options.long:
+            hours = tr.get_hours_details()
+            csv_hours = tr.csv_detailed_hours()
+        else:
+            hours = tr.get_all_hours_per_tag_per_dev()
+            csv_hours = tr.csv_cumulative_hours()
     finally:
         tr.logout()
 
