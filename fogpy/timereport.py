@@ -51,7 +51,7 @@ class DefaultDictForKey(defaultdict):
 class TimeReporting(object):
     
     def __init__(self, username, password, base_url, 
-                 start_date=None, end_date=None):
+                 start_date=None, end_date=None, prefetch=False):
         self.fbapi = FogBugzAPI(base_url, username, password)
         self.bugs = DefaultDictForKey(self.get_buginfo)
         self.devs = DefaultDictForKey(self.get_devinfo)
@@ -60,6 +60,8 @@ class TimeReporting(object):
         self.all_tags = set()
         self.bugs_with_no_tags = set()
         self.base_url = base_url
+        if prefetch:
+            self.get_buginfo('all')
 
     def logout(self):
         self.fbapi.logout()
@@ -86,23 +88,26 @@ class TimeReporting(object):
             }
         return self.devs[dev_id]
 
-    def get_buginfo(self, bug_id):
-        """Fill in info for a bug"""
-        resp = self.fbapi.call('search', q=`bug_id`, 
+    def get_buginfo(self, bug_list):
+        """Fill in info for one or more bugs, or 'all' bugs"""
+        if bug_list == 'all':
+            query = '""'
+        elif isinstance(bug_list, (int, long)):
+            query = 'ixBug:%d' % bug_list
+        else:
+            query = ' or '.join('ixBug:%d' % bug_id for bug_id in bug_list)
+        resp = self.fbapi.call('search', q=query, 
                                cols='tags,sTitle,ixBug,sProject,dtResolved')
-        c = resp.find('cases').find('case')
-        bug_id = int(c.find('ixBug').text)
-        project = c.find('sProject').text
-        self.bugs[bug_id] = {
-            'title': c.find('sTitle').text,
-            'tags': ['%s-%s'%(project, t.text) 
-                     for t in c.find('tags').findall('tag')],
-            'project': project,
-            'resolved': c.find('dtResolved').text
-        }
-        self.all_tags.update(self.bugs[bug_id]['tags'])
-        if not self.bugs[bug_id]['tags']:
-            self.bugs_with_no_tags.add(bug_id)
+        for c in resp.find('cases').findall('case'):
+            bug_id = int(c.find('ixBug').text)
+            project = c.find('sProject').text
+            self.bugs[bug_id] = {
+                'title': c.find('sTitle').text,
+                'tags': ['%s-%s'%(project, t.text) 
+                         for t in c.find('tags').findall('tag')],
+                'project': project,
+                'resolved': c.find('dtResolved').text
+            }
         return self.bugs[bug_id]
 
     def get_hours_for_dev(self, dev_name):
@@ -143,6 +148,10 @@ class TimeReporting(object):
                 self.hours_perdev[dev_name]['None'] += hours
             self.hours_perdev[dev_name]['total'] += hours
             self.hours_perdev[dev_name]['non-timesheet'] += hours
+            if tags:
+                self.all_tags.update(tags)
+            else:
+                self.bugs_with_no_tags.add(bug_id)
 
         if self.bugs_with_no_tags:
             l.warning(u"Some bugs covered by this timesheet have no "
@@ -175,6 +184,9 @@ class TimeReporting(object):
                               dev_name, hours, b['project'], t, 
                               self.url_for_bug(bug_id), 'timesheet')
                 )
+            self.all_tags.update(b['tags'])
+            if not b['tags']:
+                self.bugs_with_no_tags.add(bug_id)
 
         # now add non-timesheet elapsed time for bugs resolved in that
         # period, using resolvedby as dev
@@ -196,6 +208,9 @@ class TimeReporting(object):
                               bug['project'], t, self.url_for_bug(bug_id), 
                               'elapsed')
                 )
+            self.all_tags.update(bug['tags'])
+            if not bug['tags']:
+                self.bugs_with_no_tags.add(bug_id)
 
         if self.bugs_with_no_tags:
             l.warning(u"Some bugs covered by this timesheet have no "
@@ -210,11 +225,14 @@ class TimeReporting(object):
             - iso8601.parse_date(i.find('dtStart').text) 
         ).total_seconds() / 3600.
         dev_name = self.devs[int(i.find('ixPerson').text)]['name']
-        tags = self.bugs[int(i.find('ixBug').text)]['tags']
+        bug_id = int(i.find('ixBug').text)
+        tags = self.bugs[bug_id]['tags']
+        self.all_tags.update(tags)
         for t in tags:
             self.hours_perdev[dev_name][t] += hours
         if not tags:
             self.hours_perdev[dev_name]['None'] += hours
+            self.bugs_with_no_tags.add(bug_id)
         self.hours_perdev[dev_name]['total'] += hours
 
     def _get_intervals_in_daterange(self, start, end):
@@ -292,6 +310,9 @@ if __name__=='__main__':
     parser.add_option("-l", "--long", dest="long", default=False,
                       action='store_true', 
                       help="Dumps highly detailed logs of timesheet data.")
+    parser.add_option("-f", "--prefetch", dest="prefetch", default=False,
+                      action='store_true', 
+                      help="Prefetch info about all bugs (useful for big reports).")
 
     (options, args) = parser.parse_args()
 
@@ -315,7 +336,8 @@ if __name__=='__main__':
 
     #import ipdb; ipdb.set_trace()
     tr = TimeReporting(options.username, options.password,
-                       options.base_url, start_date, end_date)
+                       options.base_url, start_date, end_date, 
+                       prefetch=options.prefetch)
     try:
         if options.long:
             hours = tr.get_hours_details()
