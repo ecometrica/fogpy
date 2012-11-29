@@ -224,6 +224,8 @@ class TimeReporting(object):
             iso8601.parse_date(i.find('dtEnd').text)
             - iso8601.parse_date(i.find('dtStart').text) 
         ).total_seconds() / 3600.
+        if hours == 0:
+            return
         dev_name = self.devs[int(i.find('ixPerson').text)]['name']
         bug_id = int(i.find('ixBug').text)
         tags = self.bugs[bug_id]['tags']
