@@ -227,6 +227,8 @@ class TimeReporting(object):
         dev_name = self.devs[int(i.find('ixPerson').text)]['name']
         bug_id = int(i.find('ixBug').text)
         tags = self.bugs[bug_id]['tags']
+        if len(tags) > 1:
+            l.warning("Bug with >1 tag: %d" % bug_id)
         self.all_tags.update(tags)
         for t in tags:
             self.hours_perdev[dev_name][t] += hours
