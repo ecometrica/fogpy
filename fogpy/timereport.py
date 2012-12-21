@@ -42,8 +42,9 @@ except ImportError:
     pass
 
 class DefaultDictForKey(defaultdict):
-    def __init__(self, default_factory):
+    def __init__(self, default_factory, *args, **kwargs):
         self._default_factory = default_factory
+        super(DefaultDictForKey, self).__init__(*args, **kwargs)
 
     def __missing__(self, key):
         return self._default_factory(key)
