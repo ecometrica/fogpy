@@ -139,9 +139,11 @@ class TimeReporting(object):
                   'ixPersonResolvedBy'),
         )
         for b in resp.find('cases').iterfind('case'):
+            hours = float(b.find('hrsElapsedExtra').text)
+            if hours == 0:
+                continue
             bug_id = int(b.find('ixBug').text)
             dev_name = self.devs[int(b.find('ixPersonResolvedBy').text)]['name']
-            hours = float(b.find('hrsElapsedExtra').text)
             tags = self.bugs[bug_id]['tags']
             project = self.bugs[bug_id]['project']
             for t in tags:
@@ -176,6 +178,8 @@ class TimeReporting(object):
                 iso8601.parse_date(i.find('dtEnd').text)
                 - iso8601.parse_date(i.find('dtStart').text) 
             ).total_seconds() / 3600.
+            if hours == 0:
+                continue
             dev_name = self.devs[int(i.find('ixPerson').text)]['name']
             bug_id = int(i.find('ixBug').text)
             b = self.bugs[bug_id]
@@ -200,8 +204,12 @@ class TimeReporting(object):
         )
         for b in resp.find('cases').iterfind('case'):
             bug_id = int(b.find('ixBug').text)
-            dev_name = self.devs[int(b.find('ixPersonResolvedBy').text)]['name']
+            dev_id = int(b.find('ixPersonResolvedBy').text)
             hours = float(b.find('hrsElapsedExtra').text)
+            if dev_id == 0 or hours == 0:
+                # it's been reopened, or there's no hours, ignore
+                continue
+            dev_name = self.devs[dev_id]['name']
             bug = self.bugs[bug_id]
             tags = bug['tags'] or ['None', ]
             for t in tags:
@@ -340,7 +348,6 @@ if __name__=='__main__':
     start_date = iso8601.parse_date(args[0])
     end_date = iso8601.parse_date(args[1])
 
-    #import ipdb; ipdb.set_trace()
     tr = TimeReporting(options.username, options.password,
                        options.base_url, start_date, end_date, 
                        prefetch=options.prefetch)
