@@ -55,7 +55,6 @@ class TimeReporting(object):
                  start_date=None, end_date=None, prefetch=False):
         self.fbapi = FogBugzAPI(base_url, username, password)
         self.bugs = DefaultDictForKey(self.get_buginfo)
-        self.devs = DefaultDictForKey(self.get_devinfo)
         self.hours_perdev = DefaultDictForKey(self.get_hours_for_dev)
         self.start_date, self.end_date = start_date, end_date
         self.all_tags = set()
@@ -63,6 +62,8 @@ class TimeReporting(object):
         self.base_url = base_url
         if prefetch:
             self.get_buginfo('all')
+        self.devs = {}
+        self.get_devinfo(9)
 
     def logout(self):
         self.fbapi.logout()
