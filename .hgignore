@@ -1,0 +1,13 @@
+syntax: glob
+
+*.pyc
+
+bin/
+build
+include/
+lib/
+share/
+src/
+local/
+fogpy/local_settings.py
+
