@@ -81,7 +81,8 @@ class TimeReporting(object):
 
     def get_devinfo(self, dev_id):
         """Actually just gets info for all devs at once"""
-        resp = self.fbapi.call('listPeople')
+        resp = self.fbapi.call('listPeople', fIncludeNormal=1, 
+                               fIncludeVirtual=1)
         for p in resp.find('people').iterfind('person'):
             dev_id = int(p.find('ixPerson').text)
             self.devs[dev_id] = {
