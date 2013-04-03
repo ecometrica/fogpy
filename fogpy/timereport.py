@@ -292,7 +292,7 @@ class TimeReporting(object):
         return '\n'.join(lines)
     
     def csv_detailed_hours(self):
-        dblquote_re = re.compile(r'(^".*)')
+        dblquote_re = re.compile(r'(^".*[^"]$)')
         lines = []
         lines.append("Hours details for %s-%s\n" % (self.start_date, self.end_date))
         if self.bugs_with_no_tags:
