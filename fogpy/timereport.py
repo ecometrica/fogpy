@@ -303,8 +303,10 @@ class TimeReporting(object):
             l.info("No tags fb filter: " + fb_filter)
         else:
             lines.append('Bugs with no tags:\tnone' )
-        lines.append('date\tbug_num\ttitle\tdev_name\thours\tproject\ttag\turl\ttype')
+        lines.append('date\ttime\tbug_num\ttitle\tdev_name\thours\tproject\ttag\turl\ttype')
         for entry in self.hours_details:
+            # split date and time, which lets you pivot to sum by day
+            entry = entry[0].split('T') + list(entry[1:])
             lines.append('\t'.join(dblquote_re.sub(r'"\1"', ('%s'%i)) 
                                    for i in entry))
 
