@@ -90,6 +90,10 @@ class TimeReporting(object):
                 'name': p.find('sFullName').text,
                 'email': p.find('sEmail').text
             }
+        self.devs[0] = {
+            'name':     'nobody',
+            'email':    'eric@ecometrica.com'
+        }
         return self.devs[dev_id]
 
     def get_buginfo(self, bug_list):
