@@ -149,11 +149,12 @@ class TimeReporting(object):
             if hours == 0:
                 continue
             bug_id = int(b.find('ixBug').text)
-            dev_name = self.devs[int(b.find('ixPersonResolvedBy').text)]['name']
+            dev_id = int(b.find('ixPersonResolvedBy').text)
+            dev_name = self.devs[dev_id]['name']
             tags = self.bugs[bug_id]['tags']
             project = self.bugs[bug_id]['project']
             for t in tags:
-                self.hours_perdev[dev_name]['%s-%s'%(project, t)] += hours
+                self.hours_perdev[dev_name][t] += hours
             if not tags:
                 self.hours_perdev[dev_name]['None'] += hours
             self.hours_perdev[dev_name]['total'] += hours
