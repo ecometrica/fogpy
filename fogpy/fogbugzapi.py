@@ -44,7 +44,8 @@ class FogBugzAPI(object):
         url = self.base_url + '?' + urllib.urlencode(url_args)
         l.debug('Calling ' + url)
         resp = urllib.urlopen(url)
-        xml_resp = etree.parse(StringIO(resp.read()))
+        resp_txt = resp.read()
+        xml_resp = etree.parse(StringIO(resp_txt))
         if resp.getcode() != 200:
             msg = "%d error trying to do %s"%(resp.getcode(), cmd)
             l.error(msg)

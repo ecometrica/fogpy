@@ -59,7 +59,7 @@ class TimeReporting(object):
         self.hours_perdev = DefaultDictForKey(self.get_hours_for_dev)
         self.start_date, self.end_date = start_date, end_date
         self.all_tags = set()
-        self.bugs_with_no_tags = set()
+        self.bad_num_tags = set()
         self.base_url = base_url
         if prefetch:
             self.get_buginfo('all')
@@ -159,15 +159,16 @@ class TimeReporting(object):
                 self.hours_perdev[dev_name]['None'] += hours
             self.hours_perdev[dev_name]['total'] += hours
             self.hours_perdev[dev_name]['non-timesheet'] += hours
+            if len(tags) != 1:
+                l.warning("Bug with %d tag: %d" % (len(tags), bug_id))
+                self.bad_num_tags.add(bug_id)
             if tags:
                 self.all_tags.update(tags)
-            else:
-                self.bugs_with_no_tags.add(bug_id)
 
-        if self.bugs_with_no_tags:
+        if self.bad_num_tags:
             l.warning(u"Some bugs covered by this timesheet have no "
-                      u"associated tags: " 
-                      + ', '.join(`b` for b in self.bugs_with_no_tags))
+                      u"associated tags, or more than 1 tag: " 
+                      + ', '.join(`b` for b in self.bad_num_tags))
         return self.hours_perdev
     
     def get_hours_details(self, start=None, end=None):
@@ -198,8 +199,9 @@ class TimeReporting(object):
                               self.url_for_bug(bug_id), 'timesheet')
                 )
             self.all_tags.update(b['tags'])
-            if not b['tags']:
-                self.bugs_with_no_tags.add(bug_id)
+            if len(b['tags']) != 1:
+                l.warning("Bug with %d tag: %d" % (len(b[tags]), bug_id))
+                self.bad_num_tags.add(bug_id)
 
         # now add non-timesheet elapsed time for bugs resolved in that
         # period, using resolvedby as dev
@@ -226,13 +228,13 @@ class TimeReporting(object):
                               'elapsed')
                 )
             self.all_tags.update(bug['tags'])
-            if not bug['tags']:
-                self.bugs_with_no_tags.add(bug_id)
+            if len(bug['tags']) != 1:
+                self.bad_num_tags.add(bug_id)
 
-        if self.bugs_with_no_tags:
+        if self.bad_num_tags:
             l.warning(u"Some bugs covered by this timesheet have no "
-                      u"associated tags: " 
-                      + ', '.join(`b` for b in self.bugs_with_no_tags))
+                      u"associated tags, or more than 1 tag: " 
+                      + ', '.join(`b` for b in self.bad_num_tags))
         self.hours_details = entries
         return entries
     
@@ -246,14 +248,14 @@ class TimeReporting(object):
         dev_name = self.devs[int(i.find('ixPerson').text)]['name']
         bug_id = int(i.find('ixBug').text)
         tags = self.bugs[bug_id]['tags']
-        if len(tags) > 1:
-            l.warning("Bug with >1 tag: %d" % bug_id)
+        if len(tags) != 1:
+            l.warning("Bug with %d tag: %d" % (len(tags), bug_id))
+            self.bad_num_tags.add(bug_id)
         self.all_tags.update(tags)
         for t in tags:
             self.hours_perdev[dev_name][t] += hours
         if not tags:
             self.hours_perdev[dev_name]['None'] += hours
-            self.bugs_with_no_tags.add(bug_id)
         self.hours_perdev[dev_name]['total'] += hours
 
     def _get_intervals_in_daterange(self, start, end):
@@ -281,31 +283,27 @@ class TimeReporting(object):
             lines.append(k + '\t' + '\t'.join(`v[t]` for t in tags))
 
         lines.append('')
-        if self.bugs_with_no_tags:
-            lines.append('Bugs with no tags:' + '\t' 
-                         + ' '.join(`b` for b in self.bugs_with_no_tags))
-            fb_filter = self.fb_filter_for_bugs(self.bugs_with_no_tags)
+        if self.bad_num_tags:
+            lines.append('Bugs with len(tags) != 1:' + '\t' 
+                         + ' '.join(`b` for b in self.bad_num_tags))
+            fb_filter = self.fb_filter_for_bugs(self.bad_num_tags)
             lines.append('Equivalent fogbugz filter:' + fb_filter)
-            l.info("No tags fb filter: " + fb_filter)
+            l.info("Bad tags fb filter: " + fb_filter)
         else:
             lines.append('Bugs with no tags:\tnone' )
         lines.append('')
-        lines.append('Notes')
-        lines.append("\tDon't count non-timesheet time")
-        lines.append("\tSome hours count in multiple tags, so total is less "
-                     "than the sum of tags")
         return '\n'.join(lines)
     
     def csv_detailed_hours(self):
         dblquote_re = re.compile(r'(^".*[^"]$)')
         lines = []
         lines.append("Hours details for %s-%s\n" % (self.start_date, self.end_date))
-        if self.bugs_with_no_tags:
-            lines.append('Bugs with no tags:' + '\t' 
-                         + ' '.join(`b` for b in self.bugs_with_no_tags))
-            fb_filter = self.fb_filter_for_bugs(self.bugs_with_no_tags)
+        if self.bad_num_tags:
+            lines.append('Bugs with len(tags) != 1:' + '\t' 
+                         + ' '.join(`b` for b in self.bad_num_tags))
+            fb_filter = self.fb_filter_for_bugs(self.bad_num_tags)
             lines.append('Equivalent fogbugz filter:\t' + fb_filter)
-            l.info("No tags fb filter: " + fb_filter)
+            l.info("Bad tags fb filter: " + fb_filter)
         else:
             lines.append('Bugs with no tags:\tnone' )
         lines.append('date\ttime\tbug_num\ttitle\tdev_name\thours\tproject\ttag\turl\ttype')
