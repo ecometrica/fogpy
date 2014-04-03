@@ -25,6 +25,7 @@ import re
 import sys
 import urllib
 import urllib2
+import xlwt
 
 from fogpy.fogbugzapi import FogBugzAPI
 
@@ -200,7 +201,7 @@ class TimeReporting(object):
                 )
             self.all_tags.update(b['tags'])
             if len(b['tags']) != 1:
-                l.warning("Bug with %d tag: %d" % (len(b[tags]), bug_id))
+                l.warning("Bug with %d tags: %d" % (len(b['tags']), bug_id))
                 self.bad_num_tags.add(bug_id)
 
         # now add non-timesheet elapsed time for bugs resolved in that
@@ -264,12 +265,8 @@ class TimeReporting(object):
                                dtEnd=end.isoformat()+'Z')
         return resp.find('intervals').iterfind('interval')
     
-    def csv_cumulative_hours(self):
-        if not self.hours_perdev:
-            self.get_all_hours_per_tag_per_dev()
-
-        # we want to show the columns in tag alphabetical order, with 
-        # none as the first column, and total as the last
+    def _fixed_tags(self):
+        """Returns a list of the tags but with None first and total, non-timesheet last"""
         tags = sorted(self.all_tags.copy())
         if 'None' in tags: tags.remove('None')
         tags.insert(0, 'None')
@@ -277,6 +274,14 @@ class TimeReporting(object):
         tags.append('total')
         if 'non-timesheet' in tags: tags.remove('non-timesheet')
         tags.append('non-timesheet')
+        return tags
+
+    def csv_cumulative_hours(self):
+        if not self.hours_perdev:
+            self.get_all_hours_per_tag_per_dev()
+
+        tags = self._fixed_tags()
+
         lines = []
         lines.append('dev name\t' + '\t'.join(tags) + '\n')
         for k, v in self.hours_perdev.iteritems():
@@ -315,6 +320,69 @@ class TimeReporting(object):
 
         return '\n'.join(lines)
 
+    def write_xls_report(self, file_out, details=False):
+        if not self.hours_perdev:
+            self.get_all_hours_per_tag_per_dev()
+
+        header_style = xlwt.XFStyle()
+        header_style.font = xlwt.Font()
+        header_style.font.bold = True
+
+        wb = xlwt.Workbook(encoding='utf8')
+
+        ws = wb.add_sheet(u"Summary")
+        self._xls_summary_tab(ws, header_style)
+
+        if details:
+            ws = wb.add_sheet(u"Hours details")
+            self._xls_details_tab(ws, header_style)
+
+        wb.save(file_out)
+
+    def _xls_summary_tab(self, ws, header_style):
+        tags = self._fixed_tags()
+
+        row = 0
+        for col, cell in enumerate([u'dev name'] + tags):
+            ws.write(row, col, cell, header_style)
+        row += 1
+
+        for k, v in self.hours_perdev.iteritems():
+            for col, cell in enumerate([k] + [v[t] for t in tags]):
+                ws.write(row, col, cell)
+            row += 1
+        
+        ws.write(row+1, 0, u"Hours for %s-%s" % (self.start_date, self.end_date))
+        row += 2
+
+        if self.bad_num_tags:
+            ws.write(row, 0, u"Bugs with len(tags) != 1:")
+            ws.write(row+1, 1, ' '.join(`b` for b in self.bad_num_tags))
+            fb_filter = self.fb_filter_for_bugs(self.bad_num_tags)
+            lines.append(u'Equivalent fogbugz filter:' + fb_filter)
+            ws.write(row+2, 0, u"Bad tags fb filter: ")
+            ws.write(row+3, 1, fb_filter)
+            row += 4
+        else:
+            ws.write(row, 0, u"Bugs with len(tags) != 1:")
+            ws.write(row+1, 1, 'none')
+            row += 2
+    
+    def _xls_details_tab(self, ws, header_style):
+        row = 0
+        header = (u"date", u"time", u"bug_num", u"title", u"dev_name", u"hours", u"project", u"tag", 
+                  "url", u"type")
+        for col, cell in enumerate(header):
+            ws.write(row, col, cell, header_style)
+        row += 1
+        
+        for entry in self.hours_details:
+            # split date and time, which lets you pivot to sum by day
+            entry = entry[0].split('T') + list(entry[1:])
+            for col, cell in enumerate(entry):
+                ws.write(row, col, cell)
+            row += 1
+
 
 if __name__=='__main__':
     usage = __doc__
@@ -325,8 +393,12 @@ if __name__=='__main__':
     parser.add_option("-p", "--password", dest="password",
                       help="password to log into fogbugz[%default] ",
                       default=settings.get('password', ''))
-    parser.add_option("-o", "--output", dest="outfile", metavar="FILE",
-                      help="output TSV data to file instead of stdout")
+    parser.add_option("-o", "--output", dest="outfile", metavar="FILE", 
+                      default='time_report_#s-#e.#x',
+                      help="Filename to write results to (TSV or Excel). "
+                           "#s, #e, #x will insert start and end datetimes, and file extension "
+                           "(csv or xls), respectively. Use - to output to stdout. "
+                           "[%default]")
     parser.add_option("-b", "--baseurl", dest="base_url",
                       help="Base URL for FogBugz API [%default]",
                       default=settings.get('base_url', ''))
@@ -336,6 +408,10 @@ if __name__=='__main__':
     parser.add_option("-f", "--prefetch", dest="prefetch", default=False,
                       action='store_true', 
                       help="Prefetch info about all bugs (useful for big reports).")
+    parser.add_option("-x", "--xls", dest="xls", default=False,
+                      action='store_true', 
+                      help="Output xls file with short summary sheet. "
+                           "And long details sheet if -l/--long is provided.")
 
     (options, args) = parser.parse_args()
 
@@ -356,23 +432,36 @@ if __name__=='__main__':
 
     start_date = iso8601.parse_date(args[0])
     end_date = iso8601.parse_date(args[1])
+    filename = options.outfile.replace('#s', args[0]).replace('#e', args[1]).replace(
+        '#x', 'xls' if options.xls else 'csv'
+    )
+    if filename == '-':
+        f = sys.stdout
+    else:
+        f = open(filename, 'wb')
+        #f = codecs.open(filename, 'w', 'utf8')
 
     tr = TimeReporting(options.username, options.password,
                        options.base_url, start_date, end_date, 
                        prefetch=options.prefetch)
     try:
+        if options.xls or not options.long:
+            # if CSV and long format, no point in putting the summary info together
+            # but xls needs it always
+            hours = tr.get_all_hours_per_tag_per_dev()
         if options.long:
             hours = tr.get_hours_details()
-            csv_hours = tr.csv_detailed_hours()
-        else:
-            hours = tr.get_all_hours_per_tag_per_dev()
-            csv_hours = tr.csv_cumulative_hours()
     finally:
         tr.logout()
 
-    if options.outfile:
-        codecs.open(options.outfile, 'w', 'utf8').write(csv_hours)
+    if options.xls:
+        tr.write_xls_report(f, details=options.long)
     else:
-        print hours
+        # CSV
+        if options.long:
+            csv_hours = tr.csv_detailed_hours()
+        else:
+            csv_hours = tr.csv_cumulative_hours()
+        f.write(csv_hours)
 
 
