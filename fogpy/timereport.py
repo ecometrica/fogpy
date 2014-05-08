@@ -359,7 +359,6 @@ class TimeReporting(object):
             ws.write(row, 0, u"Bugs with len(tags) != 1:")
             ws.write(row+1, 1, ' '.join(`b` for b in self.bad_num_tags))
             fb_filter = self.fb_filter_for_bugs(self.bad_num_tags)
-            lines.append(u'Equivalent fogbugz filter:' + fb_filter)
             ws.write(row+2, 0, u"Bad tags fb filter: ")
             ws.write(row+3, 1, fb_filter)
             row += 4
