@@ -170,6 +170,8 @@ class TimeReporting(object):
             l.warning(u"Some bugs covered by this timesheet have no "
                       u"associated tags, or more than 1 tag: " 
                       + ', '.join(`b` for b in self.bad_num_tags))
+            fb_filter = self.fb_filter_for_bugs(self.bad_num_tags)
+            l.warning('Equivalent fogbugz filter:' + fb_filter)
         return self.hours_perdev
     
     def get_hours_details(self, start=None, end=None):
@@ -236,6 +238,8 @@ class TimeReporting(object):
             l.warning(u"Some bugs covered by this timesheet have no "
                       u"associated tags, or more than 1 tag: " 
                       + ', '.join(`b` for b in self.bad_num_tags))
+            fb_filter = self.fb_filter_for_bugs(self.bad_num_tags)
+            l.warning('Equivalent fogbugz filter:' + fb_filter)
         self.hours_details = entries
         return entries
     
